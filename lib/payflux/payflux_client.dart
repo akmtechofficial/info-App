@@ -8,6 +8,34 @@ class PayfluxClient {
 
   PayfluxClient(this.config);
 
+  /// Fetch live order details directly from Payflux API (/api/v1/orders/:orderId)
+  Future<Map<String, dynamic>?> getOrderDetails({
+    required String orderId,
+    required String checkoutToken,
+  }) async {
+    try {
+      final uri = Uri.parse('${config.baseUrl}/api/v1/orders/$orderId?token=${Uri.encodeQueryComponent(checkoutToken)}');
+      final response = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'X-Checkout-Token': checkoutToken,
+          'User-Agent': 'Payflux-Flutter-SDK/1.0.0',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return data['data'] as Map<String, dynamic>;
+        }
+      }
+    } catch (_) {
+      // Ignore network errors on initial details fetch
+    }
+    return null;
+  }
+
   /// Polls payment status using the exponential retry backoff schedule:
   /// 2s, 2s, 3s, 5s, 5s... up to timeout (default 5 minutes).
   Future<PaymentResult> pollPaymentStatus({

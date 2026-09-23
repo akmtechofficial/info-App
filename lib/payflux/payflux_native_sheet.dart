@@ -76,15 +76,50 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   Timer? _pollTimer;
   bool _copiedUpi = false;
 
-  String get _vpa => widget.upiId?.isNotEmpty == true ? widget.upiId! : 'payflux@upi';
-  String get _upiPayload => 'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(widget.merchantName?.isNotEmpty == true ? widget.merchantName! : "Payflux Merchant")}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
+  late String _vpa;
+  late String _merchantName;
+  bool _isLoadingDetails = false;
+
+  String get _upiPayload => 'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(_merchantName)}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
 
   @override
   void initState() {
     super.initState();
     _client = PayfluxClient(widget.config);
+    _vpa = widget.upiId?.isNotEmpty == true ? widget.upiId! : '';
+    _merchantName = widget.merchantName?.isNotEmpty == true ? widget.merchantName! : 'Payflux Merchant';
+    _fetchLiveOrderDetails();
     _startCountdown();
     _startPolling();
+  }
+
+  Future<void> _fetchLiveOrderDetails() async {
+    if (_vpa.isEmpty) {
+      setState(() {
+        _isLoadingDetails = true;
+      });
+    }
+    final details = await _client.getOrderDetails(
+      orderId: widget.orderId,
+      checkoutToken: widget.checkoutToken,
+    );
+    if (details != null && !_isDisposed) {
+      setState(() {
+        final apiUpi = (details['upiId'] ?? details['vpa'] ?? '').toString();
+        final apiMerchant = (details['merchantName'] ?? details['businessName'] ?? '').toString();
+        if (apiUpi.isNotEmpty) {
+          _vpa = apiUpi;
+        }
+        if (apiMerchant.isNotEmpty) {
+          _merchantName = apiMerchant;
+        }
+        _isLoadingDetails = false;
+      });
+    } else if (!_isDisposed) {
+      setState(() {
+        _isLoadingDetails = false;
+      });
+    }
   }
 
   void _startCountdown() {
@@ -415,6 +450,22 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   Widget _buildQrCodeTab() {
     final isTest = widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox;
     final qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${Uri.encodeComponent(_upiPayload)}';
+
+    if (_vpa.isEmpty && _isLoadingDetails) {
+      return const SizedBox(
+        height: 250,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8))),
+              SizedBox(height: 12),
+              Text('Fetching live UPI details from Payflux API...', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Column(
       children: [
