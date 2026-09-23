@@ -76,8 +76,8 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   Timer? _pollTimer;
   bool _copiedUpi = false;
 
-  String get _vpa => widget.upiId?.isNotEmpty == true ? widget.upiId! : 'akashakm@fam';
-  String get _upiPayload => 'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(widget.merchantName ?? "Akash Akm")}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
+  String get _vpa => widget.upiId?.isNotEmpty == true ? widget.upiId! : 'payflux@upi';
+  String get _upiPayload => 'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(widget.merchantName?.isNotEmpty == true ? widget.merchantName! : "Payflux Merchant")}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
 
   @override
   void initState() {
