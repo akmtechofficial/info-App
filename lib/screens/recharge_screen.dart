@@ -68,6 +68,8 @@ class _RechargeScreenState extends State<RechargeScreen> {
         return;
       }
 
+      if (!mounted) return;
+
       // 2. Launch Native Payflux In-App Checkout (100% Pure Native Flutter UPI Sheet)
       final PaymentResult result = await PayfluxService.startPayment(
         context: context,

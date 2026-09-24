@@ -33,6 +33,7 @@ class Payflux {
     String? merchantName,
     String? upiId,
     String? mode,
+    String? customerName,
     bool preferPureNative = true,
   }) async {
     if (orderId.trim().isEmpty) {
@@ -62,6 +63,7 @@ class Payflux {
           merchantName: merchantName,
           upiId: upiId,
           mode: mode,
+          customerName: customerName,
           config: _config,
         );
         _isProcessing = false;

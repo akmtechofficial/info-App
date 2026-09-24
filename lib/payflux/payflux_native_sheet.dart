@@ -4,9 +4,9 @@ import 'package:flutter/services.dart';
 import 'models.dart';
 import 'payflux_client.dart';
 
-/// 100% Pure Native Flutter UPI Payment Sheet (Zero WebView)
-/// Renders direct native buttons for PhonePe, GPay, Paytm, BHIM, Cred,
-/// native QR code display, live countdown timer, and background status polling.
+/// 100% Pure Native Flutter UPI Payment Sheet with Email Verification
+/// Renders dynamic UPI QR code display, sender name entry, live countdown timer,
+/// and email payment verification matching Web SDK.
 class PayfluxNativeSheet extends StatefulWidget {
   final String orderId;
   final String checkoutToken;
@@ -14,6 +14,7 @@ class PayfluxNativeSheet extends StatefulWidget {
   final String? merchantName;
   final String? upiId;
   final String? mode;
+  final String? customerName;
   final PayfluxConfig config;
 
   const PayfluxNativeSheet({
@@ -24,6 +25,7 @@ class PayfluxNativeSheet extends StatefulWidget {
     this.merchantName,
     this.upiId,
     this.mode,
+    this.customerName,
     required this.config,
   });
 
@@ -35,6 +37,7 @@ class PayfluxNativeSheet extends StatefulWidget {
     String? merchantName,
     String? upiId,
     String? mode,
+    String? customerName,
     required PayfluxConfig config,
   }) async {
     final result = await showModalBottomSheet<PaymentResult>(
@@ -49,6 +52,7 @@ class PayfluxNativeSheet extends StatefulWidget {
         merchantName: merchantName,
         upiId: upiId,
         mode: mode,
+        customerName: customerName,
         config: config,
       ),
     );
@@ -67,38 +71,35 @@ class PayfluxNativeSheet extends StatefulWidget {
 
 class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   late final PayfluxClient _client;
+  late final TextEditingController _senderNameController;
+
   bool _isDisposed = false;
   bool _isSuccess = false;
   bool _isVerifying = false;
+  String? _verificationError;
   String? _successTxnId;
   int _secondsLeft = 300; // 5 minutes
   Timer? _countdownTimer;
-  Timer? _pollTimer;
   bool _copiedUpi = false;
 
   late String _vpa;
   late String _merchantName;
-  bool _isLoadingDetails = false;
 
-  String get _upiPayload => 'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(_merchantName)}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
+  String get _upiPayload =>
+      'upi://pay?pa=$_vpa&pn=${Uri.encodeComponent(_merchantName)}&am=${widget.amount.toStringAsFixed(2)}&tr=${widget.orderId}&cu=INR';
 
   @override
   void initState() {
     super.initState();
     _client = PayfluxClient(widget.config);
-    _vpa = widget.upiId?.isNotEmpty == true ? widget.upiId! : '';
+    _senderNameController = TextEditingController(text: widget.customerName ?? '');
+    _vpa = widget.upiId?.isNotEmpty == true ? widget.upiId! : 'akashakm@fam';
     _merchantName = widget.merchantName?.isNotEmpty == true ? widget.merchantName! : 'Payflux Merchant';
     _fetchLiveOrderDetails();
     _startCountdown();
-    _startPolling();
   }
 
   Future<void> _fetchLiveOrderDetails() async {
-    if (_vpa.isEmpty) {
-      setState(() {
-        _isLoadingDetails = true;
-      });
-    }
     final details = await _client.getOrderDetails(
       orderId: widget.orderId,
       checkoutToken: widget.checkoutToken,
@@ -107,17 +108,17 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
       setState(() {
         final apiUpi = (details['upiId'] ?? details['vpa'] ?? '').toString();
         final apiMerchant = (details['merchantName'] ?? details['businessName'] ?? '').toString();
+        final apiName = (details['customerName'] ?? details['name'] ?? '').toString();
+
         if (apiUpi.isNotEmpty) {
           _vpa = apiUpi;
         }
         if (apiMerchant.isNotEmpty) {
           _merchantName = apiMerchant;
         }
-        _isLoadingDetails = false;
-      });
-    } else if (!_isDisposed) {
-      setState(() {
-        _isLoadingDetails = false;
+        if (apiName.isNotEmpty && _senderNameController.text.isEmpty) {
+          _senderNameController.text = apiName;
+        }
       });
     }
   }
@@ -145,17 +146,46 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     });
   }
 
-  void _startPolling() {
-    _client
-        .pollPaymentStatus(
-      orderId: widget.orderId,
-      checkoutToken: widget.checkoutToken,
-    )
-        .then((result) {
-      if (!_isDisposed && result.status == PaymentStatus.success) {
-        _triggerSuccess(result.transactionId ?? 'UTR_CONFIRMED');
-      }
+  Future<void> _verifyPaymentViaEmail() async {
+    final senderName = _senderNameController.text.trim();
+    if (senderName.isEmpty) {
+      setState(() {
+        _verificationError = 'Please enter your Payer / Sender Name to verify.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isVerifying = true;
+      _verificationError = null;
     });
+
+    try {
+      final result = await _client.verifyPaymentWithEmail(
+        senderName: senderName,
+        amount: widget.amount,
+      );
+
+      if (_isDisposed) return;
+
+      if (result['status'] == 'success') {
+        final sender = result['sender'] ?? senderName;
+        final date = result['date'] ?? 'CONFIRMED';
+        _triggerSuccess('$sender ($date)');
+      } else {
+        setState(() {
+          _isVerifying = false;
+          _verificationError = result['message'] ?? 'Payment email verification failed.';
+        });
+      }
+    } catch (e) {
+      if (!_isDisposed) {
+        setState(() {
+          _isVerifying = false;
+          _verificationError = 'Error verifying payment via email: ${e.toString()}';
+        });
+      }
+    }
   }
 
   void _triggerSuccess(String txnId) {
@@ -163,6 +193,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     HapticFeedback.heavyImpact();
     setState(() {
       _isSuccess = true;
+      _isVerifying = false;
       _successTxnId = txnId;
     });
 
@@ -183,16 +214,18 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   Future<void> _simulateTestSuccess() async {
     setState(() {
       _isVerifying = true;
+      _verificationError = null;
     });
 
     try {
-      // Simulate backend auto-confirmation
       await Future.delayed(const Duration(milliseconds: 900));
       _triggerSuccess('TEST_SIM_${DateTime.now().millisecondsSinceEpoch}');
     } catch (_) {
-      setState(() {
-        _isVerifying = false;
-      });
+      if (!_isDisposed) {
+        setState(() {
+          _isVerifying = false;
+        });
+      }
     }
   }
 
@@ -202,17 +235,13 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     setState(() {
       _copiedUpi = true;
     });
-    setTimeout(() {
+    Timer(const Duration(milliseconds: 2000), () {
       if (!_isDisposed) {
         setState(() {
           _copiedUpi = false;
         });
       }
-    }, 2000);
-  }
-
-  void setTimeout(VoidCallback fn, int ms) {
-    Timer(Duration(milliseconds: ms), fn);
+    });
   }
 
   String _formatTimer(int totalSecs) {
@@ -225,7 +254,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   void dispose() {
     _isDisposed = true;
     _countdownTimer?.cancel();
-    _pollTimer?.cancel();
+    _senderNameController.dispose();
     super.dispose();
   }
 
@@ -233,23 +262,26 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   Widget build(BuildContext context) {
     final isTest = widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black87,
-            blurRadius: 30,
-            offset: Offset(0, -6),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black87,
+              blurRadius: 30,
+              offset: Offset(0, -6),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: _isSuccess ? _buildSuccessView() : _buildPaymentView(isTest),
           ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: _isSuccess
-            ? _buildSuccessView()
-            : _buildPaymentView(isTest),
+        ),
       ),
     );
   }
@@ -345,7 +377,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.merchantName?.toUpperCase() ?? 'PAYFLUX SECURE',
+                        _merchantName.toUpperCase(),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -359,7 +391,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                           const Icon(Icons.verified_user_rounded, color: Color(0xFF22C55E), size: 12),
                           const SizedBox(width: 4),
                           Text(
-                            isTest ? 'TEST MODE' : 'UPI Fast Pay',
+                            isTest ? 'TEST MODE' : 'UPI Instant Pay',
                             style: TextStyle(
                               fontSize: 11,
                               color: isTest ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8),
@@ -376,7 +408,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '₹${widget.amount.toStringAsFixed(0)}',
+                    '₹${widget.amount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
@@ -399,37 +431,27 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
 
         const Divider(color: Color(0xFF1E293B), height: 1),
 
-        // Content Body (Dynamic QR Mode)
+        // Main Content (QR Code & Sender Name Input)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: _buildQrCodeTab(),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: _buildMainForm(isTest),
         ),
 
-        // Live Polling Pulsing Status Bar
+        // Bottom Action Bar & Status
         Container(
-          margin: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF334155)),
-          ),
+          margin: const EdgeInsets.fromLTRB(20, 4, 20, 16),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Awaiting payment... Auto-verifies upon payment',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                ),
+              const Row(
+                children: [
+                  Icon(Icons.shield_rounded, color: Color(0xFF22C55E), size: 14),
+                  SizedBox(width: 4),
+                  Text(
+                    '256-bit Encrypted SSL Gateway',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                  ),
+                ],
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -447,56 +469,94 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     );
   }
 
-  Widget _buildQrCodeTab() {
-    final isTest = widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox;
+  Widget _buildMainForm(bool isTest) {
     final qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${Uri.encodeComponent(_upiPayload)}';
-
-    if (_vpa.isEmpty && _isLoadingDetails) {
-      return const SizedBox(
-        height: 250,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8))),
-              SizedBox(height: 12),
-              Text('Fetching live UPI details from Payflux API...', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Column(
       children: [
-        const Text(
-          'Scan QR Code using any UPI App',
-          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 10),
-        // Native QR Display Container
+        // Sender / Payer Name Input Field
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.person_rounded, color: Color(0xFF38BDF8), size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Sender / Payer Name',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _senderNameController,
+                enabled: !_isVerifying,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Sima or Rahul Sharma',
+                  hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  filled: true,
+                  fillColor: const Color(0xFF0F172A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF334155)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF38BDF8)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Used for instant email verification upon payment receipt.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        const Text(
+          'Scan QR Code with PhonePe, GPay, Paytm, or BHIM',
+          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 8),
+
+        // QR Code Container
+        Container(
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
-                blurRadius: 20,
+                blurRadius: 18,
               ),
             ],
           ),
           child: Image.network(
             qrUrl,
-            width: 175,
-            height: 175,
+            width: 160,
+            height: 160,
             fit: BoxFit.contain,
             loadingBuilder: (ctx, child, progress) {
               if (progress == null) return child;
               return const SizedBox(
-                width: 175,
-                height: 175,
+                width: 160,
+                height: 160,
                 child: Center(
                   child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.black)),
                 ),
@@ -504,39 +564,39 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
             },
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
 
-        // Copyable VPA Row
+        // Copyable UPI ID Row
         GestureDetector(
           onTap: _copyUpiId,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFF334155)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.alternate_email_rounded, color: const Color(0xFF38BDF8), size: 16),
+                const Icon(Icons.alternate_email_rounded, color: Color(0xFF38BDF8), size: 14),
                 const SizedBox(width: 6),
                 Text(
                   _vpa,
-                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Icon(
                   _copiedUpi ? Icons.check_circle_rounded : Icons.copy_rounded,
                   color: _copiedUpi ? const Color(0xFF22C55E) : const Color(0xFF94A3B8),
-                  size: 16,
+                  size: 14,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  _copiedUpi ? 'Copied!' : 'Copy UPI ID',
+                  _copiedUpi ? 'Copied!' : 'Copy',
                   style: TextStyle(
                     color: _copiedUpi ? const Color(0xFF22C55E) : const Color(0xFF94A3B8),
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -545,29 +605,94 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
           ),
         ),
 
-        // Test Simulation Shortcut Button
+        if (_verificationError != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFEF4444)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _verificationError!,
+                    style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 14),
+
+        // Primary Verification CTA Button
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _isVerifying ? null : _verifyPaymentViaEmail,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0EA5E9),
+              foregroundColor: Colors.white,
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: _isVerifying
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'VERIFYING PAYMENT VIA EMAIL...',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                    ],
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.mark_email_read_rounded, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'VERIFY PAYMENT VIA EMAIL',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+
+        // Test Simulation Button (If Test Mode)
         if (isTest) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
-            height: 42,
+            height: 38,
             child: OutlinedButton.icon(
               onPressed: _isVerifying ? null : _simulateTestSuccess,
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFF59E0B),
                 side: const BorderSide(color: Color(0xFFF59E0B), width: 1.2),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              icon: _isVerifying
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF59E0B))),
-                    )
-                  : const Icon(Icons.flash_on_rounded, size: 18),
-              label: Text(
-                _isVerifying ? 'SIMULATING VERIFICATION...' : '⚡ SIMULATE PAYMENT SUCCESS (TEST MODE)',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              icon: const Icon(Icons.flash_on_rounded, size: 16),
+              label: const Text(
+                '⚡ SIMULATE PAYMENT SUCCESS (TEST MODE)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
               ),
             ),
           ),

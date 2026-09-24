@@ -95,6 +95,43 @@ class PayfluxClient {
     );
   }
 
+  /// Verifies payment by calling backend email payment verifier (/api/verify_payment)
+  /// which polls Gmail IMAP for payment confirmation matching sender name & amount.
+  Future<Map<String, dynamic>> verifyPaymentWithEmail({
+    required String senderName,
+    required double amount,
+  }) async {
+    final verifyUrl = Uri.parse('${config.baseUrl}/api/verify_payment');
+    try {
+      final response = await http.post(
+        verifyUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'name': senderName,
+          'amount': amount,
+        }),
+      ).timeout(const Duration(minutes: 4, seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data;
+      } else {
+        return {
+          'status': 'error',
+          'message': 'HTTP error ${response.statusCode} during email verification.',
+        };
+      }
+    } catch (e) {
+      return {
+        'status': 'error',
+        'message': 'Email verification request failed: ${e.toString()}',
+      };
+    }
+  }
+
   PaymentStatus _mapStatus(String status) {
     switch (status) {
       case 'SUCCESS':

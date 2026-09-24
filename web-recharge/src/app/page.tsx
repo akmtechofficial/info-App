@@ -46,6 +46,32 @@ import {
   X,
 } from "lucide-react";
 
+declare global {
+  interface Window {
+    Payflux?: {
+      checkout?: (options: {
+        orderId: string;
+        checkoutToken?: string;
+        baseUrl?: string;
+        name?: string;
+        handler?: (result: { orderId: string; paymentId?: string; status: string }) => void;
+        onSuccess?: (result: { orderId: string; paymentId?: string; status: string }) => void;
+        onError?: (error: { code?: string; message: string }) => void;
+        onClose?: () => void;
+      }) => void;
+      open?: (options: {
+        orderId: string;
+        checkoutToken?: string;
+        name?: string;
+        onSuccess?: (result: { orderId: string; paymentId?: string; status: string }) => void;
+        onFailure?: (error: { code?: string; message: string }) => void;
+        onClose?: () => void;
+      }) => void;
+    };
+    PaySaaS?: Window["Payflux"];
+  }
+}
+
 interface UserProfile {
   uid: string;
   email: string;
@@ -553,10 +579,49 @@ function RechargeWebPageContent() {
 
       const data = await res.json();
 
-      if (data.success && data.checkoutUrl) {
+      if (data.success && (data.orderId || data.checkoutUrl)) {
+        const orderId = data.orderId;
+        const checkoutToken = data.checkoutToken || orderId;
+
+        // 1. Try launching Payflux Web SDK in-app modal
+        const payfluxSdk = typeof window !== "undefined" ? (window.Payflux || window.PaySaaS) : null;
+        if (payfluxSdk && (payfluxSdk.checkout || payfluxSdk.open)) {
+          const launchFn = payfluxSdk.checkout || payfluxSdk.open;
+          
+          launchFn!({
+            orderId: orderId,
+            checkoutToken: checkoutToken,
+            baseUrl: "https://fampay-merchant-api.onrender.com",
+            name: userProfile?.displayName || "Subscriber",
+            handler: async (result) => {
+              console.log("Payflux Web SDK Payment Confirmed:", result);
+              setProcessingPayment(false);
+              setActivePayingPack(null);
+              await executeOrderVerification(orderId, credits, amount);
+            },
+            onSuccess: async (result) => {
+              console.log("Payflux Web SDK Payment Confirmed:", result);
+              setProcessingPayment(false);
+              setActivePayingPack(null);
+              await executeOrderVerification(orderId, credits, amount);
+            },
+            onError: (err) => {
+              console.error("Payflux Web SDK Error:", err);
+              setProcessingPayment(false);
+              setActivePayingPack(null);
+              setErrorNotice(err.message || "Payment encountered an error");
+            },
+            onClose: () => {
+              console.log("Payflux Web SDK Modal closed by user");
+              setProcessingPayment(false);
+              setActivePayingPack(null);
+            },
+          });
+          return;
+        }
+
+        // 2. Fallback: Full page redirect if Web SDK script is blocked or unavailable
         let finalCheckoutUrl: string = data.checkoutUrl;
-        
-        // Force redirect to external Payflux checkout URL on onrender.com
         if (finalCheckoutUrl.startsWith("/")) {
           finalCheckoutUrl = `https://fampay-merchant-api.onrender.com${finalCheckoutUrl}`;
         } else {

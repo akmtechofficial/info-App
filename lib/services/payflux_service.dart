@@ -165,6 +165,7 @@ class PayfluxService {
     String? merchantName,
     String? upiId,
     String? mode,
+    String? customerName,
   }) async {
     return await Payflux.startPayment(
       context: context,
@@ -174,6 +175,7 @@ class PayfluxService {
       merchantName: merchantName,
       upiId: upiId,
       mode: mode,
+      customerName: customerName,
       preferPureNative: true, // 100% Pure Native Flutter UI!
     );
   }
