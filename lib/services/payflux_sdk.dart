@@ -372,7 +372,7 @@ class __PayfluxMobileCheckoutModalState
                         ),
                       ),
                       Text(
-                        'Official Payment Gateway',
+                        'Official UPI Checkout',
                         style: TextStyle(color: AppTheme.accentNeon, fontSize: 11),
                       ),
                     ],
@@ -464,7 +464,7 @@ class __PayfluxMobileCheckoutModalState
               onPressed: _launchPayfluxInAppCheckout,
               icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.black, size: 22),
               label: const Text(
-                'PROCEED TO DYNAMIC QR GATEWAY',
+                'PROCEED TO DYNAMIC QR CHECKOUT',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               style: ElevatedButton.styleFrom(

@@ -553,7 +553,7 @@ function RechargeWebPageContent() {
     await signOut(auth);
   };
 
-  // DIRECT PAYFLUX RECHARGE & REDIRECT WORKFLOW
+  // DIRECT CREDIT RECHARGE WORKFLOW (ZERO PAYMENT GATEWAY)
   const handleInitiateRechargeAndRedirect = async (amount: number, credits: number) => {
     if (!currentUser) {
       setIsAuthOpen(true);
@@ -565,84 +565,45 @@ function RechargeWebPageContent() {
     setErrorNotice(null);
 
     try {
-      const res = await fetch("/api/payflux/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          creditsToBuy: credits,
-          uid: currentUser.uid,
-          customerEmail: currentUser.email || "user@infoapp.com",
-          customerName: userProfile?.displayName || "Subscriber",
-        }),
+      const directOrderId = `DIRECT_RECHARGE_${Date.now()}`;
+      
+      // Directly credit user balance in Firestore
+      const userRef = doc(db, "users", currentUser.uid);
+      const orderRef = doc(db, "orders", directOrderId);
+
+      await runTransaction(db, async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        const currentCredits = userSnap.exists()
+          ? userSnap.data().credits || 0
+          : 0;
+
+        transaction.update(userRef, {
+          credits: currentCredits + credits,
+          updatedAt: serverTimestamp(),
+        });
+
+        transaction.set(orderRef, {
+          userId: currentUser.uid,
+          orderId: directOrderId,
+          amount: amount,
+          creditsAdded: credits,
+          status: "SUCCESS",
+          paymentGateway: "Direct",
+          timestamp: serverTimestamp(),
+        });
       });
 
-      const data = await res.json();
-
-      if (data.success && (data.orderId || data.checkoutUrl)) {
-        const orderId = data.orderId;
-        const checkoutToken = data.checkoutToken || orderId;
-
-        // 1. Try launching Payflux Web SDK in-app modal
-        const payfluxSdk = typeof window !== "undefined" ? (window.Payflux || window.PaySaaS) : null;
-        if (payfluxSdk && (payfluxSdk.checkout || payfluxSdk.open)) {
-          const launchFn = payfluxSdk.checkout || payfluxSdk.open;
-          
-          launchFn!({
-            orderId: orderId,
-            checkoutToken: checkoutToken,
-            baseUrl: "https://fampay-merchant-api.onrender.com",
-            name: userProfile?.displayName || "Subscriber",
-            handler: async (result) => {
-              console.log("Payflux Web SDK Payment Confirmed:", result);
-              setProcessingPayment(false);
-              setActivePayingPack(null);
-              await executeOrderVerification(orderId, credits, amount);
-            },
-            onSuccess: async (result) => {
-              console.log("Payflux Web SDK Payment Confirmed:", result);
-              setProcessingPayment(false);
-              setActivePayingPack(null);
-              await executeOrderVerification(orderId, credits, amount);
-            },
-            onError: (err) => {
-              console.error("Payflux Web SDK Error:", err);
-              setProcessingPayment(false);
-              setActivePayingPack(null);
-              setErrorNotice(err.message || "Payment encountered an error");
-            },
-            onClose: () => {
-              console.log("Payflux Web SDK Modal closed by user");
-              setProcessingPayment(false);
-              setActivePayingPack(null);
-            },
-          });
-          return;
-        }
-
-        // 2. Fallback: Full page redirect if Web SDK script is blocked or unavailable
-        let finalCheckoutUrl: string = data.checkoutUrl;
-        if (finalCheckoutUrl.startsWith("/")) {
-          finalCheckoutUrl = `https://fampay-merchant-api.onrender.com${finalCheckoutUrl}`;
-        } else {
-          finalCheckoutUrl = finalCheckoutUrl
-            .replaceAll("http://localhost:3000", "https://fampay-merchant-api.onrender.com")
-            .replaceAll("https://localhost:3000", "https://fampay-merchant-api.onrender.com")
-            .replaceAll("http://localhost:3001", "https://fampay-merchant-api.onrender.com")
-            .replaceAll("https://localhost:3001", "https://fampay-merchant-api.onrender.com")
-            .replaceAll("http://127.0.0.1:3000", "https://fampay-merchant-api.onrender.com");
-        }
-
-        window.location.href = finalCheckoutUrl;
-      } else {
-        alert(data.error || data.message || "Failed to initialize Payflux payment order.");
-        setProcessingPayment(false);
-        setActivePayingPack(null);
-      }
+      setSuccessNotice({
+        show: true,
+        credits: credits,
+        amount: amount,
+        orderId: directOrderId,
+      });
     } catch (err: unknown) {
       const error = err as Error;
-      console.error("Payflux redirect error:", error);
-      alert("Network error connecting to Payflux payment gateway.");
+      console.error("Direct recharge error:", error);
+      setErrorNotice("Error adding credits: " + (error.message || "Unknown error"));
+    } finally {
       setProcessingPayment(false);
       setActivePayingPack(null);
     }

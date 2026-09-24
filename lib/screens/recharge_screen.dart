@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../payflux/payflux.dart';
 import '../providers/app_provider.dart';
 import '../services/payflux_service.dart';
-import '../payflux/payflux.dart';
 import '../theme/app_theme.dart';
 
 class RechargeScreen extends StatefulWidget {
@@ -41,37 +41,35 @@ class _RechargeScreenState extends State<RechargeScreen> {
     final provider = Provider.of<AppProvider>(context, listen: false);
     final double amount = (pack['price'] as num).toDouble();
     final int credits = pack['credits'] as int;
+    final user = provider.user;
 
     setState(() {
       _isPaying = true;
     });
 
     try {
-      // 1. Create order on Payflux
-      final orderRes = await provider.initiatePayfluxRecharge(
+      // 1. Create Payflux Order
+      final orderRes = await PayfluxService.createOrder(
         amount: amount,
-        creditsToAdd: credits,
+        customerEmail: user?.email ?? 'user@infoapp.com',
+        customerName: user?.displayName ?? 'InfoApp User',
       );
 
       if (!orderRes.success || orderRes.orderId == null || orderRes.checkoutToken == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(orderRes.message ?? 'Failed to initialize payment order.'),
+              content: Text(orderRes.message ?? 'Failed to initialize Payflux payment.'),
               backgroundColor: AppTheme.dangerRed,
             ),
           );
         }
-        setState(() {
-          _isPaying = false;
-        });
         return;
       }
 
+      // 2. Launch 100% Pure Native Flutter UPI Sheet (Zero WebView)
       if (!mounted) return;
-
-      // 2. Launch Native Payflux In-App Checkout (100% Pure Native Flutter UPI Sheet)
-      final PaymentResult result = await PayfluxService.startPayment(
+      final result = await PayfluxService.startPayment(
         context: context,
         orderId: orderRes.orderId!,
         checkoutToken: orderRes.checkoutToken!,
@@ -79,33 +77,41 @@ class _RechargeScreenState extends State<RechargeScreen> {
         merchantName: orderRes.merchantName,
         upiId: orderRes.upiId,
         mode: orderRes.mode,
+        customerName: user?.displayName ?? 'InfoApp User',
       );
 
+      // 3. Handle Payment Result
       if (!mounted) return;
-
-      // 3. Handle Result
       if (result.status == PaymentStatus.success) {
-        // Fulfill & credit user balance
-        await provider.fulfillSuccessfulOrder(
-          orderId: orderRes.orderId!,
+        final bool fulfilled = await provider.fulfillSuccessfulOrder(
+          orderId: result.orderId,
           amount: amount,
           creditsToAdd: credits,
         );
 
         if (mounted) {
-          _showSuccessDialog(credits, result.transactionId ?? 'UTR_CONFIRMED');
+          if (fulfilled) {
+            _showSuccessDialog(credits, result.transactionId ?? result.orderId);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(provider.errorMessage ?? 'Payment successful, but balance credit failed.'),
+                backgroundColor: AppTheme.dangerRed,
+              ),
+            );
+          }
         }
       } else if (result.status == PaymentStatus.cancelled) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Payment was cancelled.'),
-            backgroundColor: Color(0xFFF59E0B),
+            content: Text('Payment cancelled by user.'),
+            backgroundColor: AppTheme.primaryPurple,
           ),
         );
-      } else {
+      } else if (result.status == PaymentStatus.failed || result.status == PaymentStatus.expired) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.message ?? 'Payment failed or timed out.'),
+            content: Text(result.message ?? 'Payment failed or expired.'),
             backgroundColor: AppTheme.dangerRed,
           ),
         );
@@ -114,7 +120,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
+            content: Text('Payment error: ${e.toString()}'),
             backgroundColor: AppTheme.dangerRed,
           ),
         );

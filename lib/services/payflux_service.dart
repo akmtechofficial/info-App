@@ -83,9 +83,13 @@ class PayfluxService {
         // Backend fallback to direct gateway endpoint if apiKey provided
       }
 
+      final activeApiKey = (apiKey != null && apiKey.isNotEmpty)
+          ? apiKey
+          : 'akm_Z_live_41f34ebb7af9943d8905ace99ab04b133302f5638a34ff20';
+
       final url = Uri.parse('$baseUrl/api/v1/orders');
       final body = {
-        if (apiKey != null && apiKey.isNotEmpty) 'apiKey': apiKey,
+        'apiKey': activeApiKey,
         'amount': amount.toInt(),
         'currency': 'INR',
         'customerEmail': customerEmail.isEmpty ? 'user@infoapp.com' : customerEmail,
@@ -101,6 +105,7 @@ class PayfluxService {
         url,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': 'Bearer $activeApiKey',
           'Idempotency-Key': 'infoapp_${DateTime.now().millisecondsSinceEpoch}',
         },
         body: jsonEncode(body),
@@ -156,7 +161,7 @@ class PayfluxService {
     }
   }
 
-  /// Start in-app payment using the 100% Pure Native Payflux Flutter Sheet (Zero WebView)
+  /// Start Web Checkout using Web SDK URL & Background Status Verification
   static Future<PaymentResult> startPayment({
     BuildContext? context,
     required String orderId,
@@ -176,7 +181,7 @@ class PayfluxService {
       upiId: upiId,
       mode: mode,
       customerName: customerName,
-      preferPureNative: true, // 100% Pure Native Flutter UI!
+      preferPureNative: false, // 100% Web SDK / Web Checkout Page!
     );
   }
 }

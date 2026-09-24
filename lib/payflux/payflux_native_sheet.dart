@@ -80,6 +80,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   String? _successTxnId;
   int _secondsLeft = 300; // 5 minutes
   Timer? _countdownTimer;
+  Timer? _pollingTimer;
   bool _copiedUpi = false;
 
   late String _vpa;
@@ -93,10 +94,11 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     super.initState();
     _client = PayfluxClient(widget.config);
     _senderNameController = TextEditingController(text: widget.customerName ?? '');
-    _vpa = widget.upiId?.isNotEmpty == true ? widget.upiId! : 'akashakm@fam';
+    _vpa = widget.upiId?.isNotEmpty == true ? widget.upiId! : '';
     _merchantName = widget.merchantName?.isNotEmpty == true ? widget.merchantName! : 'Payflux Merchant';
     _fetchLiveOrderDetails();
     _startCountdown();
+    _startStatusPolling();
   }
 
   Future<void> _fetchLiveOrderDetails() async {
@@ -106,8 +108,8 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     );
     if (details != null && !_isDisposed) {
       setState(() {
-        final apiUpi = (details['upiId'] ?? details['vpa'] ?? '').toString();
-        final apiMerchant = (details['merchantName'] ?? details['businessName'] ?? '').toString();
+        final apiUpi = (details['upiId'] ?? details['payeeVpa'] ?? details['vpa'] ?? details['upi'] ?? details['merchantUpi'] ?? '').toString();
+        final apiMerchant = (details['merchantName'] ?? details['businessName'] ?? details['merchant'] ?? '').toString();
         final apiName = (details['customerName'] ?? details['name'] ?? '').toString();
 
         if (apiUpi.isNotEmpty) {
@@ -146,14 +148,24 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     });
   }
 
-  Future<void> _verifyPaymentViaEmail() async {
+  void _startStatusPolling() {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (_isDisposed || _isSuccess || _isVerifying) return;
+
+      final result = await _client.checkPaymentStatusOnce(
+        orderId: widget.orderId,
+        checkoutToken: widget.checkoutToken,
+      );
+
+      if (result != null && result.status == PaymentStatus.success && !_isDisposed && !_isSuccess) {
+        _pollingTimer?.cancel();
+        _triggerSuccess(result.transactionId ?? 'PF_${widget.orderId}');
+      }
+    });
+  }
+
+  Future<void> _verifyPaymentWithServer() async {
     final senderName = _senderNameController.text.trim();
-    if (senderName.isEmpty) {
-      setState(() {
-        _verificationError = 'Please enter your Payer / Sender Name to verify.';
-      });
-      return;
-    }
 
     setState(() {
       _isVerifying = true;
@@ -161,28 +173,30 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     });
 
     try {
-      final result = await _client.verifyPaymentWithEmail(
+      final isTest = widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox;
+      final result = await _client.verifyPayment(
+        orderId: widget.orderId,
+        checkoutToken: widget.checkoutToken,
         senderName: senderName,
-        amount: widget.amount,
+        simulateSuccess: isTest,
       );
 
       if (_isDisposed) return;
 
-      if (result['status'] == 'success') {
-        final sender = result['sender'] ?? senderName;
-        final date = result['date'] ?? 'CONFIRMED';
-        _triggerSuccess('$sender ($date)');
+      if (result['success'] == true || result['status'] == 'SUCCESS' || result['status'] == 'success') {
+        final txnId = result['transactionId'] ?? result['data']?['transactionId'] ?? 'PF_${DateTime.now().millisecondsSinceEpoch}';
+        _triggerSuccess(txnId.toString());
       } else {
         setState(() {
           _isVerifying = false;
-          _verificationError = result['message'] ?? 'Payment email verification failed.';
+          _verificationError = result['message'] ?? result['error'] ?? 'Payment pending. Complete UPI transaction & retry.';
         });
       }
     } catch (e) {
       if (!_isDisposed) {
         setState(() {
           _isVerifying = false;
-          _verificationError = 'Error verifying payment via email: ${e.toString()}';
+          _verificationError = 'Error verifying payment: ${e.toString()}';
         });
       }
     }
@@ -218,8 +232,24 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
     });
 
     try {
-      await Future.delayed(const Duration(milliseconds: 900));
-      _triggerSuccess('TEST_SIM_${DateTime.now().millisecondsSinceEpoch}');
+      final result = await _client.verifyPayment(
+        orderId: widget.orderId,
+        checkoutToken: widget.checkoutToken,
+        senderName: _senderNameController.text.trim(),
+        simulateSuccess: true,
+      );
+
+      if (_isDisposed) return;
+
+      if (result['success'] == true || result['status'] == 'SUCCESS' || result['status'] == 'success') {
+        final txnId = result['transactionId'] ?? result['data']?['transactionId'] ?? 'TEST_SIM_${DateTime.now().millisecondsSinceEpoch}';
+        _triggerSuccess(txnId.toString());
+      } else {
+        setState(() {
+          _isVerifying = false;
+          _verificationError = result['message'] ?? 'Test simulation failed on server.';
+        });
+      }
     } catch (_) {
       if (!_isDisposed) {
         setState(() {
@@ -254,6 +284,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   void dispose() {
     _isDisposed = true;
     _countdownTimer?.cancel();
+    _pollingTimer?.cancel();
     _senderNameController.dispose();
     super.dispose();
   }
@@ -448,7 +479,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                   Icon(Icons.shield_rounded, color: Color(0xFF22C55E), size: 14),
                   SizedBox(width: 4),
                   Text(
-                    '256-bit Encrypted SSL Gateway',
+                    '256-bit Encrypted SSL Security',
                     style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                   ),
                 ],
@@ -519,7 +550,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Used for instant email verification upon payment receipt.',
+                'Auto-polling server status every 2s. Enter your name and tap button below to verify.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
               ),
             ],
@@ -636,7 +667,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
           width: double.infinity,
           height: 48,
           child: ElevatedButton(
-            onPressed: _isVerifying ? null : _verifyPaymentViaEmail,
+            onPressed: _isVerifying ? null : _verifyPaymentWithServer,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0EA5E9),
               foregroundColor: Colors.white,
@@ -657,7 +688,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                       ),
                       SizedBox(width: 10),
                       Text(
-                        'VERIFYING PAYMENT VIA EMAIL...',
+                        'VERIFYING WITH PAYFLUX SERVER...',
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                       ),
                     ],
@@ -665,10 +696,10 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.mark_email_read_rounded, size: 20),
+                      Icon(Icons.verified_user_rounded, size: 20),
                       SizedBox(width: 8),
                       Text(
-                        'VERIFY PAYMENT VIA EMAIL',
+                        'I HAVE PAID • VERIFY WITH PAYFLUX',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                       ),
                     ],

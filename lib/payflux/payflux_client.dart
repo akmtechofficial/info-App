@@ -95,39 +95,83 @@ class PayfluxClient {
     );
   }
 
-  /// Verifies payment by calling backend email payment verifier (/api/verify_payment)
-  /// which polls Gmail IMAP for payment confirmation matching sender name & amount.
-  Future<Map<String, dynamic>> verifyPaymentWithEmail({
-    required String senderName,
-    required double amount,
+  /// Checks payment status once for orderId & checkoutToken
+  Future<PaymentResult?> checkPaymentStatusOnce({
+    required String orderId,
+    required String checkoutToken,
   }) async {
-    final verifyUrl = Uri.parse('${config.baseUrl}/api/verify_payment');
+    try {
+      final uri = Uri.parse('${config.baseUrl}/api/v1/payments/$orderId/status?token=${Uri.encodeQueryComponent(checkoutToken)}');
+      final response = await http.get(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Payflux-Flutter-SDK/1.0.0',
+        },
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          final orderData = data['data'];
+          final statusStr = (orderData['status'] ?? '').toString().toUpperCase();
+          final status = _mapStatus(statusStr);
+
+          return PaymentResult(
+            orderId: orderId,
+            status: status,
+            transactionId: orderData['transactionId']?.toString(),
+            message: orderData['message']?.toString() ?? statusStr,
+            paymentMethod: orderData['paymentMethod']?.toString(),
+            amount: orderData['amount'] != null ? (orderData['amount'] as num).toDouble() : null,
+          );
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Direct API Payment Verification against Payflux backend (/api/v1/payments/verify)
+  Future<Map<String, dynamic>> verifyPayment({
+    required String orderId,
+    required String checkoutToken,
+    String? senderName,
+    bool simulateSuccess = false,
+  }) async {
+    final verifyUrl = Uri.parse('${config.baseUrl}/api/v1/payments/verify');
     try {
       final response = await http.post(
         verifyUrl,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'X-Checkout-Token': checkoutToken,
         },
         body: jsonEncode({
-          'name': senderName,
-          'amount': amount,
+          'orderId': orderId,
+          'checkoutToken': checkoutToken,
+          if (senderName != null && senderName.isNotEmpty) 'senderName': senderName,
+          if (simulateSuccess) 'simulateSuccess': true,
         }),
-      ).timeout(const Duration(minutes: 4, seconds: 30));
+      ).timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return data;
       } else {
+        Map<String, dynamic> data = {};
+        try {
+          data = jsonDecode(response.body);
+        } catch (_) {}
         return {
-          'status': 'error',
-          'message': 'HTTP error ${response.statusCode} during email verification.',
+          'success': false,
+          'message': data['message'] ?? 'HTTP ${response.statusCode} error during verification.',
         };
       }
     } catch (e) {
       return {
-        'status': 'error',
-        'message': 'Email verification request failed: ${e.toString()}',
+        'success': false,
+        'message': 'Verification request error: ${e.toString()}',
       };
     }
   }

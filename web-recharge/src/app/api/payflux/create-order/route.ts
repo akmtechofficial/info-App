@@ -33,6 +33,8 @@ export async function POST(req: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${PAYFLUX_API_KEY}`,
+        "Idempotency-Key": `order_req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       },
       body: JSON.stringify(payload),
     });
