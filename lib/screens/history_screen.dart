@@ -108,7 +108,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                         color: AppTheme.primaryCyan),
                   ),
                   title: Text(
-                    '\$queryType: \$queryValue',
+                    '$queryType: $queryValue',
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
@@ -123,7 +123,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => RawResultScreen(
-                          title: '\$queryType Result',
+                          title: '$queryType Result',
                           data: resultMap,
                         ),
                       ),
@@ -134,7 +134,6 @@ class _HistoryScreenState extends State<HistoryScreen>
             }
 
             // Otherwise, it's a legacy Number Lookup
-            final number = log['phoneNumber'] ?? 'Unknown';
             final result = NumberInfoResult.fromMap(resultMap);
 
             return Card(

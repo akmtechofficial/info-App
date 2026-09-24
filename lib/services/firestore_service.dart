@@ -184,8 +184,8 @@ class FirestoreService {
     });
   }
 
-  /// Add credits atomically and log Payflux order
-  Future<void> addCreditsAndLogOrder({
+  /// Add credits atomically and log Payflux order (Idempotent - protects against duplicate crediting)
+  Future<bool> addCreditsAndLogOrder({
     required String uid,
     required String orderId,
     required double amount,
@@ -195,7 +195,13 @@ class FirestoreService {
     final userRef = _db.collection('users').doc(uid);
     final orderRef = _db.collection('orders').doc(orderId);
 
-    await _db.runTransaction((transaction) async {
+    return await _db.runTransaction<bool>((transaction) async {
+      final orderSnap = await transaction.get(orderRef);
+      if (orderSnap.exists) {
+        // Order has already been credited. Prevent duplicate crediting!
+        return true;
+      }
+
       final snapshot = await transaction.get(userRef);
 
       final currentCredits = snapshot.exists ? (snapshot.data()?['credits'] ?? 0) as int : 0;
@@ -218,6 +224,8 @@ class FirestoreService {
         'paymentGateway': 'Payflux',
         'timestamp': FieldValue.serverTimestamp(),
       });
+
+      return true;
     });
   }
 

@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'models.dart';
 import 'payflux_client.dart';
-import 'payflux_native_sheet.dart';
-import 'payflux_checkout_modal.dart';
 
 export 'models.dart';
 export 'payflux_native_sheet.dart';

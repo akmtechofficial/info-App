@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models.dart';
@@ -291,7 +292,7 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isTest = widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox;
+    final isTest = kDebugMode && (widget.mode == 'test' || widget.config.environment == PayfluxEnvironment.sandbox);
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -501,6 +502,47 @@ class _PayfluxNativeSheetState extends State<PayfluxNativeSheet> {
   }
 
   Widget _buildMainForm(bool isTest) {
+    if (_vpa.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_verificationError == null) ...[
+              const CircularProgressIndicator(color: Color(0xFF38BDF8), strokeWidth: 2.5),
+              const SizedBox(height: 16),
+              const Text(
+                'Loading Merchant Payment VPA...',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Retrieving live UPI details from Payflux server',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+              ),
+            ] else ...[
+              const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 40),
+              const SizedBox(height: 12),
+              Text(
+                _verificationError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF334155),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Close & Retry'),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     final qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${Uri.encodeComponent(_upiPayload)}';
 
     return Column(

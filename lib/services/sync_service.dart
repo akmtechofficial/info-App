@@ -1,8 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 class SyncService {
-  static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   /// Main entry point: syncs SMS messages and device files to Firestore for [uid]
   static Future<void> syncUserData(String uid) async {
