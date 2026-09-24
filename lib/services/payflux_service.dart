@@ -49,13 +49,18 @@ class PayfluxService {
     String? apiKey,
     String? returnUrl,
   }) async {
+    final activeApiKey = (apiKey != null && apiKey.isNotEmpty)
+        ? apiKey
+        : 'akm_Z_test_7fc491fbdbcf80ed436b4c7acb7ce34e189661dcea1dcfc1';
+
     try {
-      // 1. Try secure backend server route first so API key is never exposed
+      // 1. Try secure backend server route first so API key is configured
       final backendUrl = Uri.parse('$webServerUrl/api/payflux/create-order');
       final backendBody = {
         'amount': amount,
         'customerEmail': customerEmail.isEmpty ? 'user@infoapp.com' : customerEmail,
         'customerName': customerName.isEmpty ? 'InfoApp User' : customerName,
+        'apiKey': activeApiKey,
       };
 
       try {
@@ -82,10 +87,6 @@ class PayfluxService {
       } catch (_) {
         // Backend fallback to direct gateway endpoint if apiKey provided
       }
-
-      final activeApiKey = (apiKey != null && apiKey.isNotEmpty)
-          ? apiKey
-          : 'akm_Z_live_41f34ebb7af9943d8905ace99ab04b133302f5638a34ff20';
 
       final url = Uri.parse('$baseUrl/api/v1/orders');
       final body = {

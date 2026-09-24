@@ -6,7 +6,9 @@ const PAYFLUX_API_KEY = process.env.PAYFLUX_API_KEY || "";
 
 export async function POST(req: Request) {
   try {
-    const { amount, creditsToBuy, uid } = await req.json();
+    const { amount, creditsToBuy, uid, apiKey: requestApiKey } = await req.json();
+
+    const activeApiKey = requestApiKey || PAYFLUX_API_KEY;
 
     if (!amount || amount <= 0) {
       return NextResponse.json(
@@ -24,7 +26,7 @@ export async function POST(req: Request) {
     const returnUrl = `${origin}/success?credits=${credits}&amount=${amount}&uid=${uid || ""}`;
 
     const payload = {
-      apiKey: PAYFLUX_API_KEY,
+      apiKey: activeApiKey,
       amount: Number(amount),
       returnUrl: returnUrl,
     };
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${PAYFLUX_API_KEY}`,
+        "Authorization": `Bearer ${activeApiKey}`,
         "Idempotency-Key": `order_req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       },
       body: JSON.stringify(payload),
