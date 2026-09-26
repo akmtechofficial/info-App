@@ -47,4 +47,6 @@ app.*.map.json
 .env.production
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
-lib/firebase_options.dart
+# Temporary & zip archives
+temp_old_app/
+*.zip

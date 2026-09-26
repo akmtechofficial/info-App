@@ -17,10 +17,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const origin =
+    let origin =
+      process.env.NEXT_PUBLIC_SITE_URL ||
       req.headers.get("origin") ||
-      req.headers.get("referer")?.replace(/\/$/, "") ||
-      "http://localhost:3000";
+      req.headers.get("referer")?.replace(/\/$/, "");
+
+    if (!origin || origin.includes("localhost") || origin.includes("127.0.0.1")) {
+      origin = process.env.NEXT_PUBLIC_SITE_URL || "https://info-app-recharge-tawny.vercel.app";
+    }
 
     const credits = creditsToBuy || Math.max(1, Math.floor(amount / 40));
     const returnUrl = `${origin}/success?credits=${credits}&amount=${amount}&uid=${uid || ""}`;

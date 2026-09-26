@@ -1,33 +1,71 @@
-I want to integrate the Payflux payment gateway into my project. Here are the complete details:
+# Payflux Payment Gateway Integration Documentation (Web-Only)
 
-## Payflux API Details
-- Base URL: https://fampay-merchant-api.onrender.com
-- Payment Flow: Server-side order creation → Redirect to hosted checkout → UPI QR payment → Auto-verification via IMAP → Webhook notification
+This document describes the Web-Only integration architecture for Payflux Payment Gateway. Native application SDKs have been retired in favor of secure, centralized hosted web checkout portals.
 
-## Complete Integration Steps:
+---
 
-### 1. Create Payment Order (Server-Side)
-POST https://fampay-merchant-api.onrender.com/api/v1/orders
-Body: { apiKey: "YOUR_API_KEY", amount: 500, currency: "INR", customerEmail: "user@email.com", customerName: "User Name", returnUrl: "https://your-site.com/success" }
-Response: { success: true, data: { id: "order_id", checkoutUrl: "https://..." } }
+## 1. Architecture Overview
 
-### 2. Redirect User to Checkout
-Take checkoutUrl from response and redirect browser: window.location.href = data.data.checkoutUrl
-The checkout page shows UPI QR code. Payment is auto-verified.
+- **Native App Strategy**: Native SDKs and embedded in-app payment modal dialogs are not used. The Flutter app (or any native app) redirects users directly to the official Web Checkout Portal.
+- **Hosted Web Portal**: Next.js Web Recharge application (`web-recharge`) handles order creation, user Firestore credit balance updating, and Payflux hosted checkout redirection.
+- **Dynamic Origin Resolution**: All origin links use `NEXT_PUBLIC_SITE_URL` dynamically so any merchant can host the portal on their own domain or environment.
 
-### 3. Verify Payment (Server-Side)
-POST https://fampay-merchant-api.onrender.com/api/v1/payments/verify
-Body: { apiKey: "YOUR_API_KEY", orderId: "order_id_from_step1" }
-Response: { success: true, data: { status: "SUCCESS" | "PENDING" | "FAILED" } }
+---
 
-### 4. Webhook (Optional but Recommended)
-Set webhook URL in Dashboard > Webhooks
-We POST to your URL with: { event: "payment.success", payload: { order: {...}, transaction: {...} } }
-Verify signature using x-payflux-signature header with HMAC-SHA256
+## 2. Payflux API Details
 
-## Important Rules:
-- Never expose API key in frontend code, always call from backend
-- Use TEST keys during development, LIVE keys in production
-- Always verify payment server-side before granting access
-- Set up webhooks as backup for redirect failures
-- In Test Mode (when using sk_test_ keys), the checkout page will show a "Simulate Success" button instead of a QR code. Click it to simulate a successful payment.
+- **Base URL**: `https://fampay-merchant-api.onrender.com`
+- **Portal Base URL**: Configured via `NEXT_PUBLIC_SITE_URL` (e.g. `https://info-app-recharge-tawny.vercel.app`)
+- **Payment Flow**: 
+  1. Native Mobile / Web App → Opens Web Portal (`/dashboard?uid={USER_ID}`)
+  2. Web Portal → Calls Server-side Order Creation (`POST /api/payflux/create-order`)
+  3. Payflux API → Returns `checkoutUrl` with UPI QR / App sheet link
+  4. User completes payment on Payflux hosted checkout page
+  5. Auto-verification via IMAP / Webhook → Credits user balance in Firestore
+  6. Redirect back to Web Portal `/success` page
+
+---
+
+## 3. Environment Configuration (`.env`)
+
+For Next.js `web-recharge`:
+
+```env
+# Site URL Configuration (Dynamic Domain for Merchants)
+NEXT_PUBLIC_SITE_URL=https://info-app-recharge-tawny.vercel.app
+
+# Payflux API Credentials
+PAYFLUX_BASE_URL=https://fampay-merchant-api.onrender.com
+PAYFLUX_API_KEY=your_payflux_api_key_here
+
+# Firebase Web Config
+NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+```
+
+---
+
+## 4. Flutter Integration Example
+
+In Flutter, launch the web checkout portal using `url_launcher`:
+
+```dart
+import 'package:url_launcher/url_launcher.dart';
+
+Future<void> openWebRechargePortal(String userUid) async {
+  final url = 'https://info-app-recharge-tawny.vercel.app/dashboard?uid=$userUid';
+  final uri = Uri.parse(url);
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+```
+
+---
+
+## 5. Security & Verification Rules
+
+1. **Never expose API keys** in client-side native code or frontend JavaScript.
+2. **Server-Side Order Creation**: Orders are created securely via backend API route (`/api/payflux/create-order`).
+3. **Firestore Security**: User credits are updated server-side or via verified return flow.

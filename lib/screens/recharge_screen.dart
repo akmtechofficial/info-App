@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../payflux/payflux.dart';
 import '../providers/app_provider.dart';
 import '../services/payflux_service.dart';
 import '../theme/app_theme.dart';
@@ -40,7 +39,6 @@ class _RechargeScreenState extends State<RechargeScreen> {
 
     final provider = Provider.of<AppProvider>(context, listen: false);
     final double amount = (pack['price'] as num).toDouble();
-    final int credits = pack['credits'] as int;
     final user = provider.user;
 
     setState(() {
@@ -48,82 +46,35 @@ class _RechargeScreenState extends State<RechargeScreen> {
     });
 
     try {
-      // 1. Create Payflux Order
+      // 1. Create Order for Web Checkout
       final orderRes = await PayfluxService.createOrder(
         amount: amount,
         customerEmail: user?.email ?? 'user@infoapp.com',
         customerName: user?.displayName ?? 'InfoApp User',
       );
 
-      if (!orderRes.success || orderRes.orderId == null || orderRes.checkoutToken == null) {
-        if (mounted) {
+      if (orderRes.success && orderRes.checkoutUrl != null && orderRes.checkoutUrl!.isNotEmpty) {
+        // Launch Web Checkout Portal
+        final launched = await PayfluxService.launchWebCheckout(orderRes.checkoutUrl!);
+        if (!launched && mounted) {
+          await PayfluxService.openWebRechargePortal(uid: user?.uid, amount: amount);
+        }
+      } else {
+        // Fallback: Open Web Recharge Portal directly
+        final launched = await PayfluxService.openWebRechargePortal(uid: user?.uid, amount: amount);
+        if (!launched && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(orderRes.message ?? 'Failed to initialize Payflux payment.'),
+              content: Text(orderRes.message ?? 'Failed to open web recharge portal.'),
               backgroundColor: AppTheme.dangerRed,
             ),
           );
         }
-        return;
-      }
-
-      // 2. Launch 100% Pure Native Flutter UPI Sheet (Zero WebView)
-      if (!mounted) return;
-      final result = await PayfluxService.startPayment(
-        context: context,
-        orderId: orderRes.orderId!,
-        checkoutToken: orderRes.checkoutToken!,
-        amount: orderRes.amount ?? amount,
-        merchantName: orderRes.merchantName,
-        upiId: orderRes.upiId,
-        mode: orderRes.mode,
-        customerName: user?.displayName ?? 'InfoApp User',
-      );
-
-      // 3. Handle Payment Result
-      if (!mounted) return;
-      if (result.status == PaymentStatus.success) {
-        final bool fulfilled = await provider.fulfillSuccessfulOrder(
-          orderId: result.orderId,
-          amount: amount,
-          creditsToAdd: credits,
-        );
-
-        if (mounted) {
-          if (fulfilled) {
-            _showSuccessDialog(credits, result.transactionId ?? result.orderId);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(provider.errorMessage ?? 'Payment successful, but balance credit failed.'),
-                backgroundColor: AppTheme.dangerRed,
-              ),
-            );
-          }
-        }
-      } else if (result.status == PaymentStatus.cancelled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment cancelled by user.'),
-            backgroundColor: AppTheme.primaryPurple,
-          ),
-        );
-      } else if (result.status == PaymentStatus.failed || result.status == PaymentStatus.expired) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message ?? 'Payment failed or expired.'),
-            backgroundColor: AppTheme.dangerRed,
-          ),
-        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Payment error: ${e.toString()}'),
-            backgroundColor: AppTheme.dangerRed,
-          ),
-        );
+        // Direct Web Portal Launcher
+        await PayfluxService.openWebRechargePortal(uid: user?.uid, amount: amount);
       }
     } finally {
       if (mounted) {
@@ -134,89 +85,6 @@ class _RechargeScreenState extends State<RechargeScreen> {
     }
   }
 
-  void _showSuccessDialog(int creditsAdded, String txnId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppTheme.primaryCyan, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.all(24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF22C55E).withValues(alpha:0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle_rounded,
-                color: Color(0xFF22C55E),
-                size: 56,
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Recharge Successful!',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '+$creditsAdded Credits added to your balance.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppTheme.primaryCyan,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Txn Ref: $txnId',
-                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 46,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryCyan,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'CONTINUE SEARCHING',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -457,10 +325,10 @@ class _RechargeScreenState extends State<RechargeScreen> {
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.flash_on_rounded, color: Colors.black, size: 24),
+                          const Icon(Icons.language_rounded, color: Colors.black, size: 24),
                           const SizedBox(width: 8),
                           Text(
-                            'PAY ₹${selectedPack['price']} VIA UPI / PAYFLUX',
+                            'RECHARGE VIA WEB PORTAL (₹${selectedPack['price']})',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               letterSpacing: 0.5,
@@ -474,7 +342,7 @@ class _RechargeScreenState extends State<RechargeScreen> {
             const SizedBox(height: 12),
             const Center(
               child: Text(
-                'Instant In-App Payment • Supports PhonePe, GPay, Paytm & UPI QR',
+                'Web-Only Payment Portal • Secure Online Checkout',
                 style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
               ),
             ),

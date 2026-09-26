@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Info App - Web Recharge Portal (`web-recharge`)
 
-## Getting Started
+A Next.js 15 application providing a secure, web-only payment checkout experience powered by Payflux Payment Gateway and Firebase Firestore.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Features
+
+- **Web-Only Checkout**: Centralized hosted web portal for credits purchase and account recharge.
+- **Payflux Integration**: Secure server-side order creation and hosted checkout redirection.
+- **Dynamic Merchant Domain**: Configurable origin support via `NEXT_PUBLIC_SITE_URL` for multi-tenant or multi-domain deployments.
+- **Firebase Firestore Integration**: Real-time user credit account updating.
+
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env.local` or `.env` file in the root directory:
+
+```env
+# Dynamic Site Domain (e.g. https://info-app-recharge-tawny.vercel.app or custom merchant domain)
+NEXT_PUBLIC_SITE_URL=https://info-app-recharge-tawny.vercel.app
+
+# Payflux Gateway Credentials
+PAYFLUX_BASE_URL=https://fampay-merchant-api.onrender.com
+PAYFLUX_API_KEY=akm_Z_live_your_key_here
+
+# Firebase Web App Config
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Getting Started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+First, install dependencies and start the development server:
 
-## Learn More
+```bash
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🌐 Deploying to Vercel
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploy this Next.js app to Vercel or any Node.js hosting platform:
+1. Set the environment variables in your Vercel project dashboard.
+2. Set `NEXT_PUBLIC_SITE_URL` to your production domain (e.g. `https://your-domain.vercel.app`).

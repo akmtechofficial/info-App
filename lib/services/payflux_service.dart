@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import '../payflux/payflux.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PayfluxOrderResponse {
   final bool success;
@@ -32,16 +31,43 @@ class PayfluxService {
   static const String baseUrl = 'https://fampay-merchant-api.onrender.com';
   static const String webServerUrl = 'https://info-app-recharge-tawny.vercel.app';
 
-  static void initialize() {
-    Payflux.initialize(
-      const PayfluxConfig(
-        environment: PayfluxEnvironment.production,
-        customBaseUrl: baseUrl,
-      ),
-    );
+  /// Launch official Web Recharge Portal in browser for web-only recharge service
+  static Future<bool> openWebRechargePortal({String? uid, double? amount, String? customPortalUrl}) async {
+    final String targetBaseUrl = customPortalUrl ?? webServerUrl;
+    String url = targetBaseUrl;
+    if (uid != null && uid.isNotEmpty) {
+      url = '$targetBaseUrl/dashboard?uid=${Uri.encodeComponent(uid)}';
+    }
+    final uri = Uri.parse(url);
+    try {
+      if (await canLaunchUrl(uri)) {
+        return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error launching web recharge portal: $e');
+      }
+    }
+    return false;
   }
 
-  /// Create a payment order via Secure Server API (No client-side key required)
+  /// Launch explicit Web Checkout URL
+  static Future<bool> launchWebCheckout(String checkoutUrl) async {
+    if (checkoutUrl.isEmpty) return false;
+    final uri = Uri.parse(checkoutUrl);
+    try {
+      if (await canLaunchUrl(uri)) {
+        return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error launching web checkout: $e');
+      }
+    }
+    return false;
+  }
+
+  /// Create a payment order via Secure Server API
   static Future<PayfluxOrderResponse> createOrder({
     required double amount,
     required String customerEmail,
@@ -54,7 +80,6 @@ class PayfluxService {
         : 'akm_Z_test_7fc491fbdbcf80ed436b4c7acb7ce34e189661dcea1dcfc1';
 
     try {
-      // 1. Try secure backend server route first so API key is configured
       final backendUrl = Uri.parse('$webServerUrl/api/payflux/create-order');
       final backendBody = {
         'amount': amount,
@@ -84,9 +109,7 @@ class PayfluxService {
             );
           }
         }
-      } catch (_) {
-        // Backend fallback to direct gateway endpoint if apiKey provided
-      }
+      } catch (_) {}
 
       final url = Uri.parse('$baseUrl/api/v1/orders');
       final body = {
@@ -95,12 +118,8 @@ class PayfluxService {
         'currency': 'INR',
         'customerEmail': customerEmail.isEmpty ? 'user@infoapp.com' : customerEmail,
         'customerName': customerName.isEmpty ? 'InfoApp User' : customerName,
-        'returnUrl': returnUrl ?? baseUrl,
+        'returnUrl': returnUrl ?? webServerUrl,
       };
-
-      if (kDebugMode) {
-        print('Creating Payflux Order at $url: $body');
-      }
 
       final response = await http.post(
         url,
@@ -111,10 +130,6 @@ class PayfluxService {
         },
         body: jsonEncode(body),
       );
-
-      if (kDebugMode) {
-        print('Payflux Response (${response.statusCode}): ${response.body}');
-      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -138,51 +153,18 @@ class PayfluxService {
             mode: mode,
             amount: orderAmount,
           );
-        } else {
-          return PayfluxOrderResponse(
-            success: false,
-            message: data['message'] ?? 'Failed to initialize payment order',
-          );
         }
-      } else {
-        final data = jsonDecode(response.body);
-        return PayfluxOrderResponse(
-          success: false,
-          message: data['message'] ?? 'Server error (${response.statusCode})',
-        );
       }
+
+      return PayfluxOrderResponse(
+        success: false,
+        message: 'Unable to initialize order via Payflux web server.',
+      );
     } catch (e) {
-      if (kDebugMode) {
-        print('Payflux order error: $e');
-      }
       return PayfluxOrderResponse(
         success: false,
         message: 'Network error: ${e.toString()}',
       );
     }
-  }
-
-  /// Start Web Checkout using Web SDK URL & Background Status Verification
-  static Future<PaymentResult> startPayment({
-    BuildContext? context,
-    required String orderId,
-    required String checkoutToken,
-    double? amount,
-    String? merchantName,
-    String? upiId,
-    String? mode,
-    String? customerName,
-  }) async {
-    return await Payflux.startPayment(
-      context: context,
-      orderId: orderId,
-      checkoutToken: checkoutToken,
-      amount: amount,
-      merchantName: merchantName,
-      upiId: upiId,
-      mode: mode,
-      customerName: customerName,
-      preferPureNative: false, // 100% Web SDK / Web Checkout Page!
-    );
   }
 }
