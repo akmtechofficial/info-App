@@ -19,7 +19,7 @@ class VersionCheckResult {
 }
 
 class VersionCheckService {
-  static const String currentAppVersion = '1.0.0';
+  static const String currentAppVersion = '1.0.1';
   static const String remoteVersionUrl =
       'https://raw.githubusercontent.com/akmtechofficial/info-App/master/version.json';
   static const String githubReleasesApiUrl =
