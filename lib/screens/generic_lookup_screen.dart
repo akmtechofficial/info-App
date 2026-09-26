@@ -70,7 +70,7 @@ class _GenericLookupScreenState extends State<GenericLookupScreen> {
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => RawResultScreen(
-            title: '\${widget.queryType} Result',
+            title: '${widget.queryType} Result',
             data: result,
           ),
         ),

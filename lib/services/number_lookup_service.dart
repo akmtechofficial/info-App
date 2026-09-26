@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class NumberInfoResult {
@@ -78,175 +77,41 @@ class NumberInfoResult {
 }
 
 class NumberLookupService {
-  static const String api1Url =
-      'https://num-to-info-reseller.asurpapa.workers.dev/api';
-  static const String api1Key = '@SHURU_33-PAGLUU';
+  static const String _backendBaseUrl = 'https://info-app-recharge-tawny.vercel.app';
 
-  static const String api2Url =
-      'https://api-pro-v2.vercel.app/key/576f1e132326cee10f887ec38ccae1/get_data';
-
-  /// Lookup phone number with Multi-API mechanism
-  /// Throws Exception if no valid data is found so NO credit is deducted
-  static Future<NumberInfoResult> lookupNumber(String phoneNumber) async {
+  /// Securely lookup phone number via Next.js Backend Proxy
+  /// Protects all third-party API keys from APK decompilation & reverse engineering
+  static Future<NumberInfoResult> lookupNumber(String phoneNumber, {required String uid}) async {
     final cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
 
     if (cleanedNumber.length < 10) {
       throw Exception('Please enter a valid 10-digit mobile number.');
     }
 
-    // --- STEP 1: Try Primary API (API 1) ---
     try {
-      if (kDebugMode) print('Attempting API 1 lookup for $cleanedNumber...');
-      final uri1 = Uri.parse('$api1Url?key=$api1Key&number=$cleanedNumber');
-      final response1 = await http.get(uri1).timeout(const Duration(seconds: 10));
+      final response = await http.post(
+        Uri.parse('$_backendBaseUrl/api/lookup'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phoneNumber': cleanedNumber,
+          'uid': uid,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-      if (response1.statusCode == 200) {
-        final bodyText = response1.body.trim();
-        if (_isValidResponse(bodyText)) {
-          final data = jsonDecode(bodyText);
-          final result = _parseApi1Data(cleanedNumber, data);
-          if (result != null) {
-            if (kDebugMode) print('API 1 Success!');
-            return result;
-          }
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) print('API 1 error: $e');
-    }
-
-    // --- STEP 2: Try Fallback API (API 2) ---
-    try {
-      if (kDebugMode) print('Attempting API 2 lookup for $cleanedNumber...');
-      final uri2 = Uri.parse('$api2Url?number=$cleanedNumber');
-      final response2 = await http.get(uri2).timeout(const Duration(seconds: 10));
-
-      if (response2.statusCode == 200) {
-        final bodyText = response2.body.trim();
-        if (_isValidResponse(bodyText)) {
-          final data = jsonDecode(bodyText);
-          final result = _parseApi2Data(cleanedNumber, data);
-          if (result != null) {
-            if (kDebugMode) print('API 2 Success!');
-            return result;
-          }
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) print('API 2 error: $e');
-    }
-
-    // If both APIs fail to find raw data, throw Exception (NO CREDIT DEDUCTED)
-    throw Exception('No data found for this mobile number. No credits were deducted.');
-  }
-
-  static bool _isValidResponse(String text) {
-    if (text.isEmpty) return false;
-    if (text == '[]' || text == '{}' || text.contains('"data":[]') || text.contains('"data":{}')) {
-      return false;
-    }
-    if (text.contains('"status":false') ||
-        text.contains('"status": "false"') ||
-        text.contains('"success":false') ||
-        text.contains('"error":true')) {
-      return false;
-    }
-    return text.startsWith('{') || text.startsWith('[');
-  }
-
-  static NumberInfoResult? _parseApi1Data(
-      String phoneNumber, dynamic data) {
-    try {
-      Map<String, dynamic> raw;
-      if (data is List && data.isNotEmpty) {
-        raw = Map<String, dynamic>.from(data.first);
-      } else if (data is Map) {
-        if (data.containsKey('data') && data['data'] != null) {
-          final sub = data['data'];
-          if (sub is List && sub.isNotEmpty) {
-            raw = Map<String, dynamic>.from(sub.first);
-          } else if (sub is Map) {
-            raw = Map<String, dynamic>.from(sub);
-          } else {
-            raw = Map<String, dynamic>.from(data);
-          }
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['result'] != null) {
+          return NumberInfoResult.fromMap(Map<String, dynamic>.from(data['result']));
         } else {
-          raw = Map<String, dynamic>.from(data);
+          throw Exception(data['error'] ?? 'No data found for this mobile number.');
         }
       } else {
-        return null;
+        final data = jsonDecode(response.body);
+        throw Exception(data['error'] ?? 'No data found for this mobile number.');
       }
-
-      if (raw.isEmpty) return null;
-
-      final name = raw['name'] ?? raw['Name'] ?? raw['owner'] ?? raw['fullname'] ?? 'Subscriber Details Found';
-      final carrier = raw['carrier'] ?? raw['operator'] ?? raw['telecom'] ?? raw['sim'] ?? 'GSM';
-      final circle = raw['circle'] ?? raw['location'] ?? raw['state'] ?? raw['region'] ?? 'India';
-      final email = raw['email'] ?? raw['mail'] ?? 'N/A';
-      final address = raw['address'] ?? raw['city'] ?? 'N/A';
-
-      return NumberInfoResult(
-        phoneNumber: phoneNumber,
-        name: name.toString(),
-        carrier: carrier.toString(),
-        circle: circle.toString(),
-        country: 'India',
-        lineType: raw['type']?.toString() ?? 'Mobile',
-        spamScore: 0,
-        email: email.toString(),
-        address: address.toString(),
-        apiSource: 'Reseller API (Server 1)',
-        rawDetails: raw,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static NumberInfoResult? _parseApi2Data(
-      String phoneNumber, dynamic data) {
-    try {
-      Map<String, dynamic> raw;
-      if (data is List && data.isNotEmpty) {
-        raw = Map<String, dynamic>.from(data.first);
-      } else if (data is Map) {
-        if (data.containsKey('data') && data['data'] != null) {
-          final sub = data['data'];
-          if (sub is List && sub.isNotEmpty) {
-            raw = Map<String, dynamic>.from(sub.first);
-          } else if (sub is Map) {
-            raw = Map<String, dynamic>.from(sub);
-          } else {
-            raw = Map<String, dynamic>.from(data);
-          }
-        } else {
-          raw = Map<String, dynamic>.from(data);
-        }
-      } else {
-        return null;
-      }
-
-      if (raw.isEmpty) return null;
-
-      final name = raw['name'] ?? raw['Name'] ?? raw['caller'] ?? raw['owner'] ?? 'Subscriber Details Found';
-      final carrier = raw['carrier'] ?? raw['sim'] ?? raw['operator'] ?? 'GSM';
-      final circle = raw['state'] ?? raw['circle'] ?? raw['region'] ?? 'India';
-
-      return NumberInfoResult(
-        phoneNumber: phoneNumber,
-        name: name.toString(),
-        carrier: carrier.toString(),
-        circle: circle.toString(),
-        country: 'India',
-        lineType: 'Mobile',
-        spamScore: 0,
-        email: raw['email']?.toString() ?? 'N/A',
-        address: raw['address']?.toString() ?? 'N/A',
-        apiSource: 'Pro API v2 (Server 2)',
-        rawDetails: raw,
-      );
-    } catch (_) {
-      return null;
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to fetch number details securely: $e');
     }
   }
 }

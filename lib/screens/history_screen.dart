@@ -154,12 +154,12 @@ class _HistoryScreenState extends State<HistoryScreen>
                       color: AppTheme.primaryCyan),
                 ),
                 title: Text(
-                  '+91 \$number',
+                  '+91 ${result.phoneNumber}',
                   style: const TextStyle(
                       color: Colors.white, fontWeight: FontWeight.bold),
                 ),
                 subtitle: Text(
-                  '\${result.name} • \${result.carrier}',
+                  '${result.name} • ${result.carrier}',
                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
                 ),
                 trailing: const Icon(Icons.arrow_forward_ios_rounded,

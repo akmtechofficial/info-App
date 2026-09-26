@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-const PAN_TO_GST_URL = "https://gst-and-pan-info.vercel.app/pan_to_gstv4?pan=";
-const AADHAAR_INFO_URL = "https://aadhar-info-tau.vercel.app/apis/aadhaar_info?key=WELCOME&aadhar=";
-const RC_INFO_URL = "https://shuruu-x-rc-to-pdf-api.vercel.app/rc?vehicle=";
+const PAN_TO_GST_URL = process.env.RAW_PAN_URL || "https://gst-and-pan-info.vercel.app/pan_to_gstv4?pan=";
+const AADHAAR_INFO_URL = process.env.RAW_AADHAAR_URL || "https://aadhar-info-tau.vercel.app/apis/aadhaar_info?key=WELCOME&aadhar=";
+const RC_INFO_URL = process.env.RAW_RC_URL || "https://shuruu-x-rc-to-pdf-api.vercel.app/rc?vehicle=";
 
 export async function GET(req: Request) {
   try {

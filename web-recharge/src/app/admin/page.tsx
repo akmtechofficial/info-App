@@ -4,8 +4,8 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import {
   onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut,
   User,
 } from "firebase/auth";
@@ -36,8 +36,6 @@ import {
   History,
   TrendingUp,
   LogOut,
-  Mail,
-  KeyRound,
   Package,
   Trash2,
   Edit3,
@@ -90,8 +88,6 @@ function AdminPageContent() {
   const [loadingAuth, setLoadingAuth] = useState(true);
 
   // Admin Login Form State
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
@@ -127,59 +123,50 @@ function AdminPageContent() {
   const [updatingCredits, setUpdatingCredits] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
-  // 1. Firebase Auth Listener for Admin Verification (akm@infoapp.in)
+  const ADMIN_EMAIL = "akashkapri12109@gmail.com";
+
+  // 1. Firebase Auth Listener for Admin Verification (akashkapri12109@gmail.com)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setLoadingAuth(false);
 
-      if (user && user.email?.toLowerCase() === "akm@infoapp.in") {
+      if (user && user.email?.toLowerCase() === ADMIN_EMAIL) {
         setIsAdminAuthenticated(true);
+        setAuthError(null);
       } else {
         setIsAdminAuthenticated(false);
+        if (user) {
+          setAuthError(`Access Denied: Only ${ADMIN_EMAIL} is authorized to access Admin Control Panel.`);
+        }
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Firebase Admin Sign In Handler
-  const handleAdminFirebaseLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Firebase Admin Google Sign In Handler
+  const handleAdminGoogleLogin = async () => {
     setAuthError(null);
-
-    const emailTrimmed = adminEmail.trim().toLowerCase();
-    if (emailTrimmed !== "akm@infoapp.in") {
-      setAuthError("Access Denied: Only akm@infoapp.in is authorized to access Admin Control Panel.");
-      return;
-    }
-
     setAuthSubmitting(true);
 
     try {
-      await signInWithEmailAndPassword(auth, emailTrimmed, adminPassword);
+      const provider = new GoogleAuthProvider();
+      const res = await signInWithPopup(auth, provider);
+      const user = res.user;
+
+      if (user.email?.toLowerCase() !== ADMIN_EMAIL) {
+        setAuthError(`Access Denied: Only ${ADMIN_EMAIL} is authorized to access Admin Control Panel.`);
+        await signOut(auth);
+        setIsAdminAuthenticated(false);
+      } else {
+        setIsAdminAuthenticated(true);
+      }
     } catch (err: unknown) {
       const error = err as Error;
-      console.error("Admin auth error:", error);
-
-      // If account does not exist yet in Firebase, auto-create it with this password
-      if (error.message?.includes("user-not-found")) {
-        try {
-          await createUserWithEmailAndPassword(auth, emailTrimmed, adminPassword);
-          return;
-        } catch (regErr: unknown) {
-          const rErr = regErr as Error;
-          if (rErr.message?.includes("email-already-in-use")) {
-            setAuthError("Incorrect password for akm@infoapp.in.");
-          } else {
-            setAuthError(rErr.message || "Authentication failed.");
-          }
-          return;
-        }
-      }
-
+      console.error("Admin Google Auth error:", error);
       let cleanMsg = error.message || "Authentication failed.";
-      if (cleanMsg.includes("invalid-credential") || cleanMsg.includes("wrong-password")) {
-        cleanMsg = "Incorrect admin password for akm@infoapp.in.";
+      if (cleanMsg.includes("popup-closed-by-user")) {
+        cleanMsg = "Sign in cancelled.";
       }
       setAuthError(cleanMsg);
     } finally {
@@ -519,30 +506,30 @@ function AdminPageContent() {
     );
   }
 
-  // Security Gate UI (Firebase Auth for akm@infoapp.in)
+  // Security Gate UI (Google Auth restricted to akashkapri12109@gmail.com)
   if (!isAdminAuthenticated) {
     return (
       <main className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col items-center justify-center p-4 font-sans">
         <div className="glass-card max-w-md w-full p-8 rounded-3xl border border-cyan-500/30 text-center space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute -right-12 -top-12 h-32 w-32 bg-cyan-500/10 rounded-full blur-2xl"></div>
+          <div className="absolute -right-12 -top-12 h-32 w-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
           <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-black">
-            <Lock className="h-8 w-8" />
+            <Lock className="h-8 w-8 text-black" />
           </div>
 
           <div>
-            <h2 className="text-2xl font-extrabold text-white">Admin Firebase Auth</h2>
+            <h2 className="text-2xl font-extrabold text-white">Admin Control Panel</h2>
             <p className="text-xs text-slate-400 mt-1">
-              Sign in with authorized Firebase Admin Account (<span className="text-cyan-400 font-mono font-bold">akm@infoapp.in</span>).
+              Restricted access. Only authorized admin account (<span className="text-cyan-400 font-mono font-bold">akashkapri12109@gmail.com</span>) can log in.
             </p>
           </div>
 
-          {currentUser && currentUser.email?.toLowerCase() !== "akm@infoapp.in" && (
-            <div className="p-3 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs flex flex-col items-center gap-2">
-              <span>Logged in as non-admin account: <strong>{currentUser.email}</strong></span>
+          {currentUser && currentUser.email?.toLowerCase() !== "akashkapri12109@gmail.com" && (
+            <div className="p-3.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs flex flex-col items-center gap-2">
+              <span>Logged in as non-admin: <strong>{currentUser.email}</strong></span>
               <button
                 onClick={handleAdminLogout}
-                className="px-3 py-1 rounded-lg bg-amber-500 text-black font-bold text-[11px]"
+                className="px-3.5 py-1.5 rounded-lg bg-amber-500 text-black font-bold text-xs hover:opacity-90"
               >
                 Sign Out & Switch Account
               </button>
@@ -550,54 +537,44 @@ function AdminPageContent() {
           )}
 
           {authError && (
-            <div className="p-3 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs flex items-center justify-center gap-2 font-medium">
+            <div className="p-3.5 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs flex items-center justify-center gap-2 font-medium">
               <AlertCircle className="h-4 w-4 text-rose-400 flex-shrink-0" />
               <span>{authError}</span>
             </div>
           )}
 
-          <form onSubmit={handleAdminFirebaseLogin} className="space-y-4 text-left">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5 text-cyan-400" /> Admin Firebase Email
-              </label>
-              <input
-                type="email"
-                required
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="akm@infoapp.in"
-                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-purple-400" /> Admin Password
-              </label>
-              <input
-                type="password"
-                required
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Enter Firebase password"
-                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400 font-mono"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={authSubmitting}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-extrabold text-xs uppercase tracking-wider hover:opacity-90 transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
-            >
-              {authSubmitting ? (
-                <RefreshCw className="h-4 w-4 animate-spin text-black" />
-              ) : (
-                <ShieldCheck className="h-4 w-4" />
-              )}
-              Sign In to Admin Panel
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={handleAdminGoogleLogin}
+            disabled={authSubmitting}
+            className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm shadow-xl flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+          >
+            {authSubmitting ? (
+              <RefreshCw className="h-5 w-5 animate-spin text-slate-700" />
+            ) : (
+              <>
+                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>Sign In with Google (Admin)</span>
+              </>
+            )}
+          </button>
 
           <div className="pt-2">
             <button
@@ -633,7 +610,7 @@ function AdminPageContent() {
             </h1>
             <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Logged in as: <strong className="text-cyan-400 font-mono">akm@infoapp.in</strong>
+              Logged in as: <strong className="text-cyan-400 font-mono">{currentUser?.email || "akashkapri12109@gmail.com"}</strong>
             </p>
           </div>
         </div>

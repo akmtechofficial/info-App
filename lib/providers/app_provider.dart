@@ -162,13 +162,10 @@ class AppProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Fetch info using Multi-API Fallback Engine
-      final result = await NumberLookupService.lookupNumber(phoneNumber);
-
-      // 2. Deduct credit & save to Firestore atomically
-      await _firestoreService.deductCreditAndLogSearch(
+      // 1. Fetch info using Multi-API Fallback Engine (Next.js server handles credit check, deduction & search logging)
+      final result = await NumberLookupService.lookupNumber(
+        phoneNumber,
         uid: _user!.uid,
-        result: result,
       );
 
       _lastSearchResult = result;
@@ -215,7 +212,7 @@ class AppProvider with ChangeNotifier {
       } else if (queryType == 'RC') {
         result = await RawApiService.lookupRc(queryValue);
       } else {
-        throw Exception('Unknown query type: \$queryType');
+        throw Exception('Unknown query type: $queryType');
       }
 
       await _firestoreService.deductCreditAndLogRawSearch(

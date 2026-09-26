@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 
 class RawApiService {
   // TODO: Replace this placeholder with your live web-recharge Next.js domain (e.g., https://my-recharge.vercel.app)
-  static const String _backendProxyBaseUrl = 'https://info-app-recharge-tawny.vercel.app/';
+  static const String _backendProxyBaseUrl = 'https://info-app-recharge-tawny.vercel.app';
 
   /// Fetch raw JSON data from our secure Next.js backend proxy
   static Future<Map<String, dynamic>> _fetchSecure(String type, String query) async {
@@ -24,10 +24,10 @@ class RawApiService {
           return {'response': decoded};
         }
       } else {
-        throw Exception('Server error: Status \${response.statusCode}');
+        throw Exception('Server error: Status ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Failed to fetch data securely: \$e');
+      throw Exception('Failed to fetch data securely: $e');
     }
   }
 
