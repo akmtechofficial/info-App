@@ -25,7 +25,7 @@ class VersionCheckService {
   static const String githubReleasesApiUrl =
       'https://api.github.com/repos/akmtechofficial/info-App/releases/latest';
   static const String defaultDownloadUrl =
-      'https://raw.githubusercontent.com/akmtechofficial/info-App/master/build/app/outputs/flutter-apk/app-release.apk';
+      'https://raw.githubusercontent.com/akmtechofficial/info-App/master/app-release.apk';
 
   static Future<VersionCheckResult> checkVersionStatus() async {
     try {

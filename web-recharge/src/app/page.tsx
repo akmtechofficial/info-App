@@ -1334,7 +1334,8 @@ function RechargeWebPageContent() {
 
             <div className="pt-2 space-y-3">
               <a
-                href="https://raw.githubusercontent.com/akmtechofficial/info-App/master/build/app/outputs/flutter-apk/app-release.apk"
+                href="/app-release.apk"
+                download="InfoApp-release.apk"
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => setShowAppDownloadModal(false)}
