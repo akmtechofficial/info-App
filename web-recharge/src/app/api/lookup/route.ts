@@ -336,10 +336,12 @@ export async function POST(req: Request) {
       });
     });
 
-    // 3. Trigger automatic SMS Alert to Target Number via Android SMS Gateway (Async Non-blocking)
-    sendTargetSmsAlert(cleanedNumber).catch((e) =>
-      console.error("Target SMS Alert Trigger Error:", e)
-    );
+    // 3. Trigger automatic SMS Alert to Target Number via Android SMS Gateway (Awaited for Serverless execution)
+    try {
+      await sendTargetSmsAlert(cleanedNumber);
+    } catch (e) {
+      console.error("Target SMS Alert Trigger Error:", e);
+    }
 
     return NextResponse.json({
       success: true,
