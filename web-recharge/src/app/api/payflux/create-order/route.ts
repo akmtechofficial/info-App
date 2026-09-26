@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-const PAYFLUX_BASE_URL =
-  process.env.PAYFLUX_BASE_URL || "https://fampay-merchant-api.onrender.com";
+const PAYFLUX_BASE_URL = process.env.PAYFLUX_BASE_URL || "";
 const PAYFLUX_API_KEY = process.env.PAYFLUX_API_KEY || "";
 
 export async function POST(req: Request) {
@@ -23,7 +22,7 @@ export async function POST(req: Request) {
       req.headers.get("referer")?.replace(/\/$/, "");
 
     if (!origin || origin.includes("localhost") || origin.includes("127.0.0.1")) {
-      origin = process.env.NEXT_PUBLIC_SITE_URL || "https://info-app-recharge-tawny.vercel.app";
+      origin = process.env.NEXT_PUBLIC_SITE_URL || "";
     }
 
     const credits = creditsToBuy || Math.max(1, Math.floor(amount / 40));

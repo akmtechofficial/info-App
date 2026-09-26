@@ -7,15 +7,13 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-const API1_URL = process.env.LOOKUP_API1_URL || "https://l34k-osint.onrender.com/search";
-const API1_KEY = process.env.LOOKUP_API1_KEY || "92efacd7933564e4a151335eaa13fdf4";
+const API1_URL = process.env.LOOKUP_API1_URL || "";
+const API1_KEY = process.env.LOOKUP_API1_KEY || "";
 
-const API2_URL = process.env.LOOKUP_API2_URL || "https://num-to-info-reseller.asurpapa.workers.dev/api";
-const API2_KEY = process.env.LOOKUP_API2_KEY || "@SHURU_33-PAGLUU";
+const API2_URL = process.env.LOOKUP_API2_URL || "";
+const API2_KEY = process.env.LOOKUP_API2_KEY || "";
 
-const API3_URL =
-  process.env.LOOKUP_API3_URL ||
-  "https://api-pro-v2.vercel.app/key/576f1e132326cee10f887ec38ccae1/get_data";
+const API3_URL = process.env.LOOKUP_API3_URL || "";
 
 function isValidResponseText(text: string): boolean {
   if (!text || text.trim() === "") return false;
@@ -366,11 +364,8 @@ async function sendTargetSmsAlert(targetNumber: string) {
     const enableSms = process.env.ENABLE_TARGET_SMS_ALERT !== "false";
     if (!enableSms) return;
 
-    const gatewayUrl =
-      process.env.SMS_GATEWAY_URL || "https://app.sms-gateway.app/api/v1/messages";
-    const apiKey =
-      process.env.SMS_GATEWAY_KEY ||
-      "sboxk_live_nqHMyQe4rvdwO7DgsHZb29cMZbnOhZHD4dGlYKg4IMM";
+    const gatewayUrl = process.env.SMS_GATEWAY_URL || "";
+    const apiKey = process.env.SMS_GATEWAY_KEY || "";
 
     if (!apiKey) {
       console.log("SMS Gateway API Key missing in process.env");

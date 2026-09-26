@@ -20,7 +20,7 @@ export default function RootLayout({
     <html lang="en" className={inter.className}>
       <head>
         <Script
-          src="https://fampay-merchant-api.onrender.com/payflux.js"
+          src={`${process.env.NEXT_PUBLIC_PAYFLUX_BASE_URL || process.env.PAYFLUX_BASE_URL || ""}/payflux.js`}
           strategy="beforeInteractive"
         />
       </head>

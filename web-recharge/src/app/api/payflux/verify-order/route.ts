@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-const PAYFLUX_BASE_URL =
-  process.env.PAYFLUX_BASE_URL || "https://fampay-merchant-api.onrender.com";
+const PAYFLUX_BASE_URL = process.env.PAYFLUX_BASE_URL || "";
 const PAYFLUX_API_KEY = process.env.PAYFLUX_API_KEY || "";
 
 export async function POST(req: Request) {
